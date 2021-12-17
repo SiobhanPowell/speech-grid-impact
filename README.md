@@ -4,6 +4,8 @@ This repository accompanies the paper:
 
 S. Powell, G. V. Cezar, L. Min, I. Azevedo and R. Rajagopal, "Charging Infrastructure Access and Operation to Reduce the Grid Impacts of Deep Electric Vehicle Adoption", Submitted.
 
+This code will also be available at: https://github.com/Stanford-Sustainable-Systems-Lab.
+
 Contact: 
 - siobhan (dot) powell (at) stanford (dot) edu
 - ramr (at) stanford (dot) edu
