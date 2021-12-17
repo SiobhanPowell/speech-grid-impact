@@ -1,5 +1,7 @@
 # Charging infrastructure access and operation to reduce the grid impacts of deep electric vehicle adoption
 
+[![DOI](https://zenodo.org/badge/438098660.svg)](https://zenodo.org/badge/latestdoi/438098660)
+
 This repository accompanies the paper: 
 
 S. Powell, G. V. Cezar, L. Min, I. Azevedo and R. Rajagopal, "Charging Infrastructure Access and Operation to Reduce the Grid Impacts of Deep Electric Vehicle Adoption", Submitted.
@@ -14,7 +16,7 @@ In this paper we study the generation-level grid impacts of deep electric vehicl
 
 Please cite this code: 
 
-Siobhan Powell, Gustavo Vianna Cezar, Liang Min, Ines Azevedo & Ram Rajagopal. (2021). SiobhanPowell/speech-grid-impact: First release (v1.0.0). Zenodo. [link]
+Siobhan Powell, Gustavo Vianna Cezar, Liang Min, Ines Azevedo & Ram Rajagopal. (2021). SiobhanPowell/speech-grid-impact: (v1.0.0). Zenodo. doi: 10.5281/zenodo.5789549
 
 ### Contents
 
