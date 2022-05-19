@@ -4,6 +4,12 @@ import pandas as pd
 import numpy as np
 import copy
 from simple_dispatch import StorageModel
+from simple_dispatch import generatorData
+from simple_dispatch import bidStack
+from simple_dispatch import dispatch
+from simple_dispatch import generatorDataShort
+import scipy
+
 
 
 class FutureGrid(object):
@@ -60,6 +66,38 @@ class FutureGrid(object):
             
         self.gd_short = copy.deepcopy(gd_short_final)
         
+    def add_generators_sensitivity(self, fuel_col='is_gas', percent_increase_of_total_ffcap=0.2):
+        
+        # Duplicate existing plants, youngest and cheapest, to add 20% (or other) of existing fossil fuel capacity
+        captotal = self.gd_short.df.loc[(self.gd_short.df['nerc']=='WECC')&(self.gd_short.df[fuel_col]==1)].mw.sum()
+        uptoind = np.where(np.cumsum(self.gd_short.df.loc[(self.gd_short.df['nerc']=='WECC')&(self.gd_short.df[fuel_col]==1)].sort_values(by=['year_online', 'vom'], ascending=[False, True]).loc[:, ['mw', 'year_online', 'vom']]['mw']) > percent_increase_of_total_ffcap*(captotal))[0][0]
+        new_additions = pd.DataFrame({'orispl_unit':self.gd_short.df.loc[self.gd_short.df.loc[(self.gd_short.df['nerc']=='WECC')&(self.gd_short.df[fuel_col]==1)].sort_values(by=['year_online', 'vom'], ascending=[False, True]).index.values[np.arange(0, uptoind)], 'orispl_unit'].values})
+        new_additions['Year'] = 2022
+
+        gd_short_final = copy.deepcopy(self.gd_short)
+#         added_units = self.additions_df[self.additions_df['Year']<future_year]['orispl_unit'].values
+        for i, val in enumerate(new_additions['orispl_unit'].values):
+            idx = len(gd_short_final.df)
+            loc1 = gd_short_final.df[gd_short_final.df['orispl_unit']==val].index
+            gd_short_final.df = pd.concat((gd_short_final.df, gd_short_final.df.loc[loc1]), ignore_index=True)
+            gd_short_final.df.loc[idx, 'orispl_unit'] = 'added_'+str(i)
+            
+        self.gd_short = copy.deepcopy(gd_short_final)
+        
+    def drop_generators_sensitivity(self, fuel_col='is_gas', percent_decrease_of_total_ffcap=0.2):
+        
+        # Drop existing plants, oldest and most expensive, to drop 20% (or other) of existing fossil fuel capacity
+        captotal = self.gd_short.df.loc[(self.gd_short.df['nerc']=='WECC')&(self.gd_short.df[fuel_col]==1)].mw.sum()
+        uptoind = np.where(np.cumsum(self.gd_short.df.loc[(self.gd_short.df['nerc']=='WECC')&(self.gd_short.df[fuel_col]==1)].sort_values(by=['year_online', 'vom'], ascending=[True, False]).loc[:, ['mw', 'year_online', 'vom']]['mw']) > percent_decrease_of_total_ffcap*(captotal))[0][0]
+        new_drops = pd.DataFrame({'orispl_unit':self.gd_short.df.loc[self.gd_short.df.loc[(self.gd_short.df['nerc']=='WECC')&(self.gd_short.df[fuel_col]==1)].sort_values(by=['year_online', 'vom'], ascending=[True, False]).index.values[np.arange(0, uptoind)], 'orispl_unit'].values})
+        new_drops['Year'] = 2022
+
+        gd_short_final = copy.deepcopy(self.gd_short)
+#         dropped_units = new_drops[new_drops['retirement_year']<future_year]['orispl_unit'].values
+        gd_short_final.df = gd_short_final.df[~gd_short_final.df['orispl_unit'].isin(new_drops)].copy(deep=True).reset_index(drop=True)            
+        self.gd_short = copy.deepcopy(gd_short_final)
+        
+        
     def drop_generators(self, future_year):
         """Drop generators to match announced retirements in the WECC grid."""
         
@@ -83,7 +121,7 @@ class FutureGrid(object):
     def set_up_scenario(self, year=2030, solar=2.5, wind=2.5, fuel=1.0, ev_pen=1.0,
                         ev_scenario='High Home', ev_timers='', ev_workplace_control='', 
                         ev_workplace_bool=False, evs_bool=True, ev_scenario_date='20211119', 
-                        weekend_timers='', weekend_date='20211119'):
+                        weekend_timers='', weekend_date='20211119', ev_folder=None, generator_sensitivity=False, fuel_col='is_gas', generator_sensitivity_type='add', percent_increase_of_total_ffcap=0.2, percent_decrease_of_total_ffcap=0.2):
         """Set up scenario of future demand."""
 
         # drop and add generators
@@ -91,6 +129,11 @@ class FutureGrid(object):
         if year != 2019:
             self.add_generators(year)
             self.drop_generators(year)
+        if generator_sensitivity:
+            if generator_sensitivity_type=='add':
+                self.add_generators_sensitivity(fuel_col=fuel_col, percent_increase_of_total_ffcap=percent_increase_of_total_ffcap)
+            else:
+                self.drop_generators_sensitivity(fuel_col=fuel_col, percent_decrease_of_total_ffcap=percent_decrease_of_total_ffcap)
         # change fuel prices
         if fuel != 1.0:
             self.change_gas_prices(fuel)
@@ -106,36 +149,37 @@ class FutureGrid(object):
         # add EVs
         if evs_bool:
             if ev_workplace_bool:
-                self.future.evs(pen_level=ev_pen, scenario_name=ev_scenario, timers_extra_info=ev_timers, wp_control=ev_workplace_control, scenario_date=ev_scenario_date, timers_extra_info_weekends=weekend_timers, weekend_date=weekend_date)
+                self.future.evs(pen_level=ev_pen, scenario_name=ev_scenario, timers_extra_info=ev_timers, wp_control=ev_workplace_control, scenario_date=ev_scenario_date, timers_extra_info_weekends=weekend_timers, weekend_date=weekend_date, folder=ev_folder)
             else:
-                self.future.evs(pen_level=ev_pen, scenario_name=ev_scenario, timers_extra_info=ev_timers, scenario_date=ev_scenario_date, timers_extra_info_weekends=weekend_timers, weekend_date=weekend_date)
+                self.future.evs(pen_level=ev_pen, scenario_name=ev_scenario, timers_extra_info=ev_timers, scenario_date=ev_scenario_date, timers_extra_info_weekends=weekend_timers, weekend_date=weekend_date, folder=ev_folder)
         # update
         self.future.update_total()
         
-    def check_overgeneration(self, save_str=None):
+    def check_overgeneration(self, save_str=None, extra_save_str='', change_demand=True):
         """Check for negative demand. Clip and save overgeneration amount."""
 
         if self.future.demand['demand'].min() < 0:
             if save_str is not None:
-                self.future.demand.loc[self.future.demand['demand'] < 0].to_csv(save_str+'_overgeneration.csv', index=None)
+                self.future.demand.loc[self.future.demand['demand'] < 0].to_csv(save_str+'_overgeneration'+extra_save_str+'.csv', index=None)
+        if change_demand:
             self.future.demand['demand'] = self.future.demand['demand'].clip(0, 1e10)
-
-    def run_storage_before_capacitydispatch(self, cap, max_rate):
+            
+    def run_storage_before_capacitydispatch(self, cap, max_rate, allow_negative=False):
         """If running storage on net demand before dispatch, do that here."""
     
         self.stor_df = pd.DataFrame({'datetime': pd.to_datetime(self.future.demand['datetime'].values),
                                      'total_demand': self.future.demand['demand'].values})
         self.storage = StorageModel(self.stor_df)
-        self.storage.calculate_operation_beforecapacity(cap, max_rate)
+        self.storage.calculate_operation_beforecapacity(cap, max_rate, allow_negative=allow_negative)
 
-    def run_dispatch(self, max_penlevel, save_str, result_date='20211119', return_generator_limits=False):
+    def run_dispatch(self, max_penlevel, save_str, result_date='20220330', return_generator_limits=False, thermal_storage=False, force_storage=False):
         """Run the dispatch. max_penlevel indicates whether storage will be needed or whether the model will break
         without it, but the try except clause will ensure the simulation is run if that is incorrect."""
 
         self.bs = bidStack(self.gd_short, co2_dol_per_kg=0, time=1, dropNucHydroGeo=True, include_min_output=False, mdt_weight=0.5, include_easiur=False) 
         self.dp = dispatch(self.bs, self.future.demand, time_array=scipy.arange(52)+1, return_generator_limits=return_generator_limits)
     
-        if self.future.ev_pen_level <= max_penlevel:
+        if ((self.future.ev_pen_level <= max_penlevel) and not force_storage):
             try:
                 self.dp.calcDispatchAll()
                 if save_str is not None:
@@ -145,12 +189,16 @@ class FutureGrid(object):
                 pd.DataFrame({'Error':['Needed storage in dispatch'], 'Case':[save_str]}, index=[0]).to_csv(save_str+'_error_record.csv', index=False)
                 print('----Capacity too low----')
                 print('Try with storage:')
-                self.dp = dispatch(self.bs, self.future.demand, time_array=scipy.arange(52)+1, include_storage=True)
+                self.dp = dispatch(self.bs, self.future.demand, time_array=scipy.arange(52)+1, include_storage=True, return_generator_limits=return_generator_limits)
                 self.dp.calcDispatchAll()
                 if save_str is not None:
                     self.dp.df.to_csv(save_str+'_withstorage'+'_dpdf_'+result_date+'.csv', index=False)
+                self.dp.storage_df['total_demand'] = self.dp.df.demand
                 self.storage = StorageModel(self.dp.storage_df)
-                self.storage.calculate_minbatt_forcapacity()
+                if thermal_storage:
+                    self.storage.calculate_minbatt_forcapacity_thermal(limityear=self.year)
+                else:
+                    self.storage.calculate_minbatt_forcapacity()
                 print('Storage Rate Result:', int(self.storage.min_maxrate))
                 print('Storage Capacity: ', int(self.storage.min_capacity))
                 if save_str is not None:
@@ -161,12 +209,15 @@ class FutureGrid(object):
         else:
             print('----Capacity too low----')
             print('Try with storage:')
-            self.dp = dispatch(self.bs, self.future.demand, time_array=scipy.arange(52)+1, include_storage=True)
+            self.dp = dispatch(self.bs, self.future.demand, time_array=scipy.arange(52)+1, include_storage=True, return_generator_limits=return_generator_limits)
             self.dp.calcDispatchAll()
             if save_str is not None:
                 self.dp.df.to_csv(save_str+'_withstorage'+'_dpdf_'+result_date+'.csv', index=False)
             self.storage = StorageModel(self.dp.storage_df)
-            self.storage.calculate_minbatt_forcapacity()
+            if thermal_storage:
+                self.storage.calculate_minbatt_forcapacity_thermal(limityear=self.year)
+            else:
+                self.storage.calculate_minbatt_forcapacity()
             print('Storage Rate Result:', int(self.storage.min_maxrate))
             print('Storage Capacity: ', int(self.storage.min_capacity))
             if save_str is not None:
@@ -175,6 +226,172 @@ class FutureGrid(object):
             if save_str is not None:
                 self.storage_stats.to_csv(save_str+'_storage_stats_'+result_date+'.csv', index=False)
 
+    def find_capacity_limit_1_binarysearch(self, bs_limits=None, lims_8760=None, year=2035, solar=3.5, wind=3,
+                                            fuel=1.0, ev_scenario='HighHome', ev_timers='',
+                                            ev_workplace_control='', ev_workplace_bool=False, evs_bool=True,
+                                            ev_scenario_date='20220408', with_storage_before=False, cap=None,
+                                            max_rate=None, minpen=0.01, weekend_timers=None, weekend_date=None):
+        """Find capacity limits. To avoid starting the search from 1% adoption each time, this method does a short
+        search to find which quadrant to start looking in. It returns just the 1-hour breaking point."""
+    
+        if weekend_timers is None:
+            weekend_timers = ev_timers
+        if weekend_date is None:
+            weekend_date = ev_scenario_date
+
+        violated1 = False
+        limit1 = 0
+        if lims_8760 is None:
+            lims_8760 = np.concatenate((np.repeat(bs_limits['Max Capacity'], (24*7)), np.repeat(np.array(bs_limits.loc[51, 'Max Capacity']), 24)))
+        print('Short Binary Search: ')
+        penlevel = np.round((minpen+1)/2, 2)
+        self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                             ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                             ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool,
+                             ev_scenario_date=ev_scenario_date, weekend_timers=weekend_timers, weekend_date=weekend_date)
+        self.check_overgeneration()
+        if with_storage_before:
+            self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+            total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+        else:
+            total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+        print(penlevel, ':', total_overs)
+        if total_overs == 0:
+            mid = copy.copy(penlevel) # 0.5
+            penlevel = np.round((mid+1)/2, 2) # 0.75
+            self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                                 ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                                 ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool, ev_scenario_date=ev_scenario_date,
+                                 weekend_timers=weekend_timers, weekend_date=weekend_date)
+            self.check_overgeneration()
+            if with_storage_before:
+                self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+                total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+            else:
+                total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+            print(penlevel, ':', total_overs)
+            if total_overs == 0:
+                mid = copy.copy(penlevel) # 0.75
+                penlevel = np.round((mid+1)/2, 2) # 0.875
+                self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                                     ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                                     ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool, ev_scenario_date=ev_scenario_date,
+                                     weekend_timers=weekend_timers, weekend_date=weekend_date)
+                self.check_overgeneration()
+                if with_storage_before:
+                    self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+                    total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+                else:
+                    total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+                print(penlevel, ':', total_overs)
+                if total_overs == 0:
+                    start_pen = copy.copy(penlevel)
+                else:
+                    start_pen = copy.copy(mid)
+                    
+            else:
+                penlevel = np.round(copy.copy(mid) + 1/8, 2) # 0.625
+                self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                                     ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                                     ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool, ev_scenario_date=ev_scenario_date,
+                                     weekend_timers=weekend_timers, weekend_date=weekend_date)
+                self.check_overgeneration()
+                if with_storage_before:
+                    self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+                    total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+                else:
+                    total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+                print(penlevel, ':', total_overs)
+                if total_overs == 0:
+                    start_pen = copy.copy(penlevel)
+                else:
+                    start_pen = copy.copy(mid)
+        else:
+            mid = copy.copy(penlevel) # 0.5
+            penlevel = np.round((mid+minpen)/2, 2) # 0.25
+            self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                                 ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                                 ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool,
+                                 ev_scenario_date=ev_scenario_date, weekend_timers=weekend_timers, weekend_date=weekend_date)
+            self.check_overgeneration()
+            if with_storage_before:
+                self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+                total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+            else:
+                total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+            print(penlevel, ':', total_overs)
+            if total_overs == 0:
+                mid = copy.copy(penlevel) # 0.25
+                penlevel = np.round(copy.copy(mid) + 1/8, 2) # 0.375
+                
+                self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                                 ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                                 ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool,
+                                 ev_scenario_date=ev_scenario_date, weekend_timers=weekend_timers, weekend_date=weekend_date)
+                self.check_overgeneration()
+                if with_storage_before:
+                    self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+                    total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+                else:
+                    total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+                print(penlevel, ':', total_overs)
+                if total_overs == 0:
+                    start_pen = copy.copy(penlevel)
+                else:
+                    start_pen = copy.copy(mid)
+
+            else:
+                mid = copy.copy(penlevel) # 0.25
+                penlevel = np.round(copy.copy(mid) - 1/8, 2) # 0.125
+                
+                self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                                 ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                                 ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool,
+                                 ev_scenario_date=ev_scenario_date, weekend_timers=weekend_timers, weekend_date=weekend_date)
+                self.check_overgeneration()
+                if with_storage_before:
+                    self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+                    total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+                else:
+                    total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+                print(penlevel, ':', total_overs)
+                if total_overs == 0:
+                    start_pen = copy.copy(penlevel)
+                else:
+                    start_pen = copy.copy(minpen)
+                
+        print('Linear search from starting point: ', start_pen)
+        for penlevel in np.arange(start_pen, 1.01, 0.01):
+            print(penlevel)
+            penint = int(100*penlevel)
+            self.set_up_scenario(year=year, solar=solar, wind=wind, fuel=fuel, ev_scenario=ev_scenario,
+                                 ev_timers=ev_timers, ev_pen=penlevel, ev_workplace_control=ev_workplace_control,
+                                 ev_workplace_bool=ev_workplace_bool, evs_bool=evs_bool,
+                                 ev_scenario_date=ev_scenario_date, weekend_timers=weekend_timers, weekend_date=weekend_date)
+            self.check_overgeneration()
+            if with_storage_before:
+                self.run_storage_before_capacitydispatch(cap, max_rate, allow_negative=True)
+                total_overs = np.shape(np.where(self.storage.df.comb_demand_after_storage.values > lims_8760)[0])[0]
+            else:
+                total_overs = np.shape(np.where(self.future.demand.demand.values > lims_8760)[0])[0]
+            if (total_overs == 1) and (violated1 == False):
+                print('Total overs: ', total_overs)
+                limit1 = copy.copy(penlevel)
+                print('Violation 1: ', penlevel)
+                violated1 = True
+                break
+            elif (total_overs >= 1) and (violated1 == False):
+                print('Total overs: ', total_overs)
+                limit1 = copy.copy(penlevel)
+                print('Violation 1: ', penlevel)
+                violated1 = True
+                break
+        if not violated1:
+            limit1 = 1.0
+        self.limit1 = limit1
+
+        return limit1
+    
     def find_capacity_limit_10_binarysearch(self, bs_limits=None, lims_8760=None, year=2030, solar=2.5, wind=2.5,
                                             fuel=1.0, ev_scenario='BaseCase_NoL1', ev_timers='',
                                             ev_workplace_control='', ev_workplace_bool=False, evs_bool=True,
@@ -346,7 +563,7 @@ class FutureDemand(object):
         self.not_combustion = pd.DataFrame({'dt': self.all_generation_2019['dt'],
                                             'generation': self.all_generation_2019['WECC_notcombustion']})
 
-        self.electrification_scaling = {2020: 1.0, 2025: 1.05, 2030: 1.1, 2035: 1.15, 2040: 1.2, 2050: 1.3}
+        self.electrification_scaling = {2020: 1.0, 2025: 1.05, 2030: 1.1, 2035: 1.16, 2040: 1.21, 2050: 1.3}
 
         if renewables_case == 'announced':
             # source: for 2020-2030 https://www.wecc.org/ePubs/GenerationResourceAdequacyForecast/Pages/Nameplate.aspx
@@ -354,8 +571,8 @@ class FutureDemand(object):
             self.solar_multiplier = {2020: 1.3, 2025: 2, 2030: 2.1, 2035: 2.1, 2040: 2.1}  # multiplier on wecc 2019 level
             self.wind_multiplier = {2020: 1.2, 2025: 1.4, 2030: 1.5, 2035: 1.5, 2040: 1.5}
         elif renewables_case == 'projected':
-            self.solar_multiplier = {2020: 1.3, 2025: 2, 2030: 2.5, 2035: 4, 2040: 5}
-            self.wind_multiplier = {2020: 1.2, 2025: 2, 2030: 2.5, 2035: 4, 2040: 5}
+            self.solar_multiplier = {2020: 1.3, 2025: 2, 2030: 2.5, 2035: 3.5, 2040: 5}
+            self.wind_multiplier = {2020: 1.2, 2025: 2, 2030: 2.5, 2035: 3, 2040: 5}
         else:
             print('Missing renewables case.')
 
@@ -395,13 +612,14 @@ class FutureDemand(object):
         self.not_combustion['generation'] += (self.wind_multiplier[self.year]-1) * wind_2019
         self.demand['demand'] -= (self.wind_multiplier[self.year]-1) * wind_2019
 
-    def evs(self, pen_level, scenario_name='HighHOme', timers_extra_info='', wp_control='', scenario_date='20211119', timers_extra_info_weekends='', weekend_date='20211119'):
+    def evs(self, pen_level, scenario_name='HighHOme', timers_extra_info='', wp_control='', scenario_date='20211119', timers_extra_info_weekends='', weekend_date='20211119', folder=None):
         """Example scenarios: HighHome, UniversalHome, LowHome_HighWork, LowHome_LowWork.
         Example timer extras: '', '_midnighttimer', '_NoTimers'. Example wp_control: 'minpeak', 'solar'. """
         self.evs_update_status = True
         self.ev_pen_level = pen_level
 
-        folder = '../EVDemandModel_EVScenarios/RunningModel/Outputs/'
+        if folder is None:
+            folder = '../EVDemandModel_EVScenarios/RunningModel/Outputs/'
         
         if wp_control != '':
             key1 = folder + scenario_name + '_100p' + timers_extra_info + '_WPcontrol_' + wp_control + '_WECC_' + scenario_date + '.csv'

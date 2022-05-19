@@ -58,7 +58,7 @@ class StorageModel(object):
         self.min_maxrate = max_rate.value
         self.df.loc[0:len(self.df)-2, 'battery_operation'] = r.value
         
-    def calculate_operation_beforecapacity(self, cap, max_rate):
+    def calculate_operation_beforecapacity(self, cap, max_rate, allow_negative=False):
         """Calculate the minimum battery capacity, operating (as a simplification) as if there were one large battery
         satisfying this load, so the battery can only charge or discharge at once."""
         en = cp.Variable(len(self.df))  # energy
@@ -70,7 +70,8 @@ class StorageModel(object):
             constraints.append(en[i+1] == en[i] + r[i])  # charging or discharging changes energy
             constraints.append(comb_demand[i] == self.df['total_demand'].values[i] + r[i])  # charging or discharging changes net demand to be dispatched after
         constraints.append(comb_demand[len(self.df)-1] == self.df['total_demand'].values[len(self.df)-1])
-        constraints.append(comb_demand >= 0)  # no negative net demand
+        if not allow_negative:
+            constraints.append(comb_demand >= 0)  # no negative net demand
 
         prob = cp.Problem(cp.Minimize(cp.norm2(comb_demand)), constraints)  # smooth net demand to be dispatched as much as possible
 
@@ -80,6 +81,7 @@ class StorageModel(object):
         self.df.loc[len(self.df)-1, 'battery_operation'] = 0
         self.df.loc[:, 'comb_demand_after_storage'] = comb_demand.value
         
+
 
 """
 The following code was originally included in https://github.com/tdeetjen/simple_dispatch and minimally modified by Siobhan Powell
@@ -152,7 +154,7 @@ import cvxpy as cp
 
 
 class generatorData(object):
-    def __init__(self, nerc, egrid_fname, eia923_fname, ferc714_fname='', ferc714IDs_fname='', cems_folder='', easiur_fname='', include_easiur_damages=True, year=2017, fuel_commodity_prices_excel_dir='', hist_downtime = True, coal_min_downtime = 12, cems_validation_run=False, testing_single_function=False, nan_price_cems_sorting=False):
+    def __init__(self, nerc, egrid_fname, eia923_fname, ferc714_fname='', ferc714IDs_fname='', cems_folder='', easiur_fname='', include_easiur_damages=True, year=2017, fuel_commodity_prices_excel_dir='', hist_downtime = True, coal_min_downtime = 12, cems_validation_run=False, testing_single_function=False, nan_price_cems_sorting=False, tz_aware=False):
         """ 
         Translates the CEMS, eGrid, FERC, and EIA data into a dataframe for feeding into the bidStack class
         ---
@@ -173,6 +175,8 @@ class generatorData(object):
         self.nerc = nerc
         if year == 2019:
             egrid_year_str = str(19)
+        elif year == 2020:
+            egrid_year_str = str(19) # though they have started publishing every year, they have not published 2020 yet so we use 2019 to help with the 2020 run
         elif year >= 2014:
             egrid_year_str = str(math.floor((year / 2.0)) * 2)[2:4] #eGrid is only every other year so we have to use eGrid 2016 to help with a 2017 run, for example
         else:
@@ -200,6 +204,7 @@ class generatorData(object):
         self.hist_downtime = hist_downtime
         self.coal_min_downtime = coal_min_downtime
         self.year = year
+        self.tz_aware = tz_aware
         if not testing_single_function:
             self.cleanGeneratorData()
             self.addGenVom()
@@ -277,6 +282,7 @@ class generatorData(object):
                   'SERC' : ['mo','ar','tx','la','ms','tn','ky','il','va','al','fl','ga','sc','nc'],
                   'MRO': ['ia','il','mi','mn','mo','mt','nd','ne','sd','wi','wy'], 
                   'TRE': ['ok','tx']}
+        tz_mapping = {'ca':0,'or':0,'wa':0, 'nv':0,'mt':1,'id':1,'wy':1,'ut':1,'co':1,'az':1,'nm':1,'tx':1}
         #compile the different months of CEMS files into one dataframe, df_cems. (CEMS data is downloaded by state and by month, so compiling a year of data for ERCOT / TRE, for example, requires reading in 12 Texas .csv files and 12 Oklahoma .csv files)   
         df_cems = pandas.DataFrame()
         for s in states[self.nerc]:
@@ -285,6 +291,21 @@ class generatorData(object):
                 df_cems_add = pandas.read_csv(self.cems_folder + '/%s/%s%s%s.csv'%(str(self.year),str(self.year),s,m))
                 df_cems_add = df_cems_add[['ORISPL_CODE', 'UNITID', 'OP_DATE','OP_HOUR','GLOAD (MW)', 'SO2_MASS (lbs)', 'NOX_MASS (lbs)', 'CO2_MASS (tons)', 'HEAT_INPUT (mmBtu)']].dropna()
                 df_cems_add.columns=['orispl', 'unit', 'date','hour','mwh', 'so2_tot', 'nox_tot', 'co2_tot', 'mmbtu']
+                
+                if self.tz_aware:
+                    if tz_mapping[s] == 1: # shift onto California Time
+                        tmp = df_cems_add.copy(deep=True)
+                        tmp['date'] = pandas.to_datetime(tmp['date'])
+                        inds1 = tmp.loc[tmp['hour'].isin(numpy.arange(1, 24))].index
+                        inds2 = tmp.loc[tmp['hour']==0].index
+                        tmp2 = tmp.loc[(tmp['hour']==23)&(tmp['date']==datetime.datetime(self.year, 12, 31))].copy(deep=True)
+                        tmp.loc[inds1, 'hour'] -= 1 # it is one hour earlier in California
+                        tmp.loc[inds2, 'date'] -= datetime.timedelta(days=1)
+                        tmp.loc[inds2, 'hour'] = 23
+                        tmp = pandas.concat((tmp, tmp2), ignore_index=True) # fill in first hour of following year with last hour of this year
+                        df_cems_add = tmp.loc[tmp['date'].dt.year == self.year].copy(deep=True)
+                        df_cems_add['date'] = df_cems_add['date'].dt.strftime("%m-%d-%Y")
+                
                 df_cems = pandas.concat([df_cems, df_cems_add])
         #create the 'orispl_unit' column, which combines orispl and unit into a unique tag for each generation unit
         df_cems['orispl_unit'] = df_cems['orispl'].map(str) + '_' + df_cems['unit'].map(str)

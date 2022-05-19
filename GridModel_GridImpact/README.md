@@ -67,34 +67,34 @@ Then, load the generator model (available with the posted data):
 ```
 gd_short = pickle.load(open('IntermediateOutputs/generator_data_short_WECC_2019.obj', 'rb'))
 ```
-Then, set up the grid model. For this example, we will multiply solar and wind 2x 2019 levels. If you have run a new scenario of charging demand using the ev demand model code, you can use that here:
+Then, set up the grid model. For this example, we will multiply solar and wind 3x 2019 levels. If you have run a new scenario of charging demand using the ev demand model code, you can use that here:
 ```
 grid = FutureGrid(gd_short)
-grid.set_up_scenario(year=2030, solar=2, wind=2, fuel=1, ev_scenario='CustomScenario', 
-                     ev_timers='_midnighttimer', ev_pen=1.0, ev_workplace_bool=False, evs_bool=True, 
+grid.set_up_scenario(year=2035, solar=3, wind=3, fuel=1, ev_scenario='CustomScenario', 
+                     ev_timers='_midnighttimer', ev_pen=0.5, ev_workplace_bool=False, evs_bool=True, 
                      ev_scenario_date='20211217', weekend_date='20211217',  weekend_timers='_midnighttimer')
 grid.check_overgeneration(save_str='testing')
-grid.run_dispatch(0.5, save_str='testing', result_date='20211217')
+grid.run_dispatch(0.1, save_str='testing', result_date='20211217')
 ```
 You could also adjust the demand yourself, not using our model of EVs. For example, if you had a dataframe `custom_demand` with hourly EV demand from your own modeling:
 ```
 grid = FutureGrid(gd_short)
-grid.set_up_scenario(year=2030, solar=2, wind=2, fuel=1, evs_bool=False)
+grid.set_up_scenario(year=2035, solar=3, wind=3, fuel=1, evs_bool=False)
 grid.check_overgeneration(save_str='testing')
 grid.future.demand['demand'] = grid.future.demand['demand'] + custom_demand['demand'].values
-grid.run_dispatch(0.5, save_str='testing', result_date='20211217') 
+grid.run_dispatch(0.1, save_str='testing', result_date='20211217') 
 ```
 Finally, you could run storage before the dispatch as we do in the paper. E.g. with 5 GW 4 hour storage: 
 ```
 grid = FutureGrid(gd_short)
-grid.set_up_scenario(year=2030, solar=2, wind=2, fuel=1, ev_scenario='CustomScenario', 
-                     ev_timers='_midnighttimer', ev_pen=1.0, ev_workplace_bool=False, evs_bool=True, 
+grid.set_up_scenario(year=2035, solar=3, wind=3, fuel=1, ev_scenario='CustomScenario', 
+                     ev_timers='_midnighttimer', ev_pen=0.5, ev_workplace_bool=False, evs_bool=True, 
                      ev_scenario_date='20211217', weekend_date='20211217',  weekend_timers='_midnighttimer')
 grid.check_overgeneration(save_str='testing')
 # Run storage before dispatch: 
 grid.run_storage_before_capacitydispatch(cap=int(4*5000), max_rate=5000)
 grid.storage.df.to_csv('testing'+'_storagebeforedf_'+'20211217'+'.csv')
 grid.future.demand['demand'] = np.copy(grid.storage.df.comb_demand_after_storage.values)
-grid.run_dispatch(0.5, 'testing', result_date='20211217')
+grid.run_dispatch(0.1, 'testing', result_date='20211217')
 ```
 
