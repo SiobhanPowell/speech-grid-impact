@@ -1,5 +1,5 @@
 """ SPEECH Model Extended
-By: Siobhan Powell, 2021. 
+By: Siobhan Powell, 2021. Revised in 2022.
 
 This code is an extension of the original speech model presented in https://github.com/SiobhanPowell/speech/. Copyright (c) 2021, SiobhanPowell. All rights reserved.
 
@@ -84,6 +84,7 @@ class DataSetConfigurations(object):
         self.cluster_reorder_actodend = {}
 
         self.gmm_names = {}
+        self.gmm_subfolder = ''
         self.start_time_scaler = 1
         self.start_mod = 1
 
@@ -198,18 +199,16 @@ class SPEECh(object):
     :type data: class:`DataSetConfigurations'
     """
     
-    def __init__(self, data, penetration_level=0.5, run_weekend_pgs=False, outside_california=True, states=None, simple_adoption=True, bypass_adoption=False):
+    def __init__(self, data, penetration_level=0.5, run_weekend_pgs=False, outside_california=True, states=None, simple_adoption=True):
 
         self.data = data
         self.penetration_level = penetration_level
         self.run_weekend_pgs = run_weekend_pgs
         
-        if outside_california:
-            self.adoption_df = pd.read_csv(data.folder+'adoption_df_us_counties.csv')
+        self.adoption_df = pd.read_csv(data.folder+'adoption_df_us_counties.csv')
         if states is not None:
             self.adoption_df = self.adoption_df[self.adoption_df['State'].isin(states)].copy(deep=True).reset_index(drop=True) # eg [CA, WA]
-        if not bypass_adoption:
-            self.set_up_adoption(simple_adoption)
+        self.set_up_adoption(simple_adoption)
         self.num_evs = None
         self.local_pen_level = None
         self.local_num_vehicles = None
@@ -685,14 +684,14 @@ class SPEEChGroupConfiguration(object):
         
         inds = np.random.choice(range(len(self.speech_config.speech.pz['weekday'][self.g])), int(self.total_drivers), replace=True)
         for cat in self.speech_config.speech.data.categories:
-            if os.path.isfile(self.speech_config.speech.data.folder+'GMMs/'+'weekday'+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'):
+            if os.path.isfile(self.speech_config.speech.data.folder+'GMMs/'+self.speech_config.speech.data.gmm_subfolder+'weekday'+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'):
                 self.segment_session_numbers['weekday'][cat] = int(sum(self.speech_config.speech.pz['weekday'][self.g].loc[inds, cat+self.speech_config.speech.data.zkey_weekday]))
             else:
                 self.segment_session_numbers['weekday'][cat] = 0
         if self.speech_config.speech.data.weekend_exists:
             inds = np.random.choice(range(len(self.speech_config.speech.pz['weekend'][self.g])), int(self.total_drivers), replace=True)
             for cat in self.speech_config.speech.data.categories:
-                key1 = self.speech_config.speech.data.folder+'GMMs/'+'weekend'+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'
+                key1 = self.speech_config.speech.data.folder+'GMMs/'+self.speech_config.speech.data.gmm_subfolder+'weekend'+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'
                 if os.path.isfile(key1):
                     self.segment_session_numbers['weekend'][cat] = int(sum(self.speech_config.speech.pz['weekend'][self.g].loc[inds, cat+self.speech_config.speech.data.zkey_weekend]))
                 else:
@@ -703,12 +702,12 @@ class SPEEChGroupConfiguration(object):
 
         for cat in self.speech_config.speech.data.categories:
             weekday = 'weekday'
-            key = self.speech_config.speech.data.folder+'GMMs/'+weekday+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'
+            key = self.speech_config.speech.data.folder+'GMMs/'+self.speech_config.speech.data.gmm_subfolder+weekday+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'
             if os.path.isfile(key):
                 self.segment_gmms[weekday][cat] = pickle.load(open(key, "rb"))
             if self.speech_config.speech.data.weekend_exists:
                 weekday = 'weekend'
-                key = self.speech_config.speech.data.folder+'GMMs/'+weekday+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'
+                key = self.speech_config.speech.data.folder+'GMMs/'+self.speech_config.speech.data.gmm_subfolder+weekday+'_'+self.speech_config.speech.data.gmm_names[cat]+'_'+str(self.g)+'.p'
                 if os.path.isfile(key):
                     self.segment_gmms[weekday][cat] = pickle.load(open(key, "rb"))
 
@@ -764,15 +763,32 @@ class LoadProfile(object):
 
         if (self.weekday == 'weekend') and (self.config.speech.data.weekend_shift_timers_dict is not None):
             comps = self.config.speech.data.weekend_shift_timers_dict['Components'][self.group_config.g]
-            target = self.config.speech.data.weekend_shift_timers_dict['Targets'][self.config.utility_region]
+            if self.config.utility_region == 'Mixed':
+                target = None
+            else:
+                target = self.config.speech.data.weekend_shift_timers_dict['Targets'][self.config.utility_region]
         else:
             comps = self.config.speech.data.shift_timers_dict['Components'][self.group_config.g]
-            target = self.config.speech.data.shift_timers_dict['Targets'][self.config.utility_region]
+            if self.config.utility_region == 'Mixed':
+                target = None
+            else:
+                target = self.config.speech.data.shift_timers_dict['Targets'][self.config.utility_region]
+            
         for comp in comps:
             if self.config.speech.data.start_mod == 1:
-                output[0][np.where(output[1] == comp)[0], 0] = (1/24)*target
+                if target is None:
+                    num_targets = np.shape(output[0][np.where(output[1] == comp)[0], 0])[0]
+                    target_here = np.random.choice(np.array([20, 20.5, 21, 21.5, 22, 22.5, 23, 23.5, 0, 0.5, 1, 1.5, 2, 2.5]), num_targets, replace=True)
+                    output[0][np.where(output[1] == comp)[0], 0] = (1/24)*target_here
+                else:
+                    output[0][np.where(output[1] == comp)[0], 0] = (1/24)*target
             else:
-                output[0][np.where(output[1] == comp)[0], 0] = 3600*target
+                if target is None:
+                    num_targets = np.shape(output[0][np.where(output[1] == comp)[0], 0])[0]
+                    target_here = np.random.choice(np.array([20, 20.5, 21, 21.5, 22, 22.5, 23, 23.5, 0, 0.5, 1, 1.5, 2, 2.5]), num_targets, replace=True)
+                    output[0][np.where(output[1] == comp)[0], 0] = 3600*target_here
+                else:
+                    output[0][np.where(output[1] == comp)[0], 0] = 3600*target
         return output[0]
 
     def end_times_and_load(self, start_times, energies, rate):
