@@ -28,11 +28,11 @@ Each subfolder has an extended `README.md` describing its contents and use.
 
 We have posted the model objects and charging profiles publicly to accompany the paper. This repository contains instructions and sample code to show how you could use them to run other scenarios. Please contact the authors with any questions.
 
-Data: https://data.mendeley.com/datasets/y872vhtfrc/1. (submitted; accessible pending Mendeley processing)
+Data: https://data.mendeley.com/datasets/y872vhtfrc/2. (submitted; accessible pending Mendeley processing)
 
 Please cite this data set: 
 
-Powell, Siobhan; Cezar, Gustavo Vianna; Min, Liang; Azevedo, Ines; Rajagopal, Ram (2021), “SPEECh Model for Study on Grid Impacts of Charging Infrastructure Access”, Mendeley Data, V1, doi: 10.17632/y872vhtfrc.1
+Powell, Siobhan; Cezar, Gustavo Vianna; Min, Liang; Azevedo, Ines; Rajagopal, Ram (2021), “SPEECh Model for Study on Grid Impacts of Charging Infrastructure Access”, Mendeley Data, V1, doi: 10.17632/y872vhtfrc.2
 
 The raw input data used for this analysis cannot be shared publicly. 
 
