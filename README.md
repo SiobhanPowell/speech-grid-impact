@@ -11,6 +11,7 @@ This code is also available at: https://github.com/Stanford-Sustainable-Systems-
 Contact: 
 - siobhan (dot) powell (at) stanford (dot) edu
 - ramr (at) stanford (dot) edu
+- iazevedo (at) stanford (dot) edu
 
 In this paper we study the generation-level grid impacts of deep electric vehicle adoption in WECC, the Western US, comparing the effects of charging infrastructure access and conventional charging control.
 
