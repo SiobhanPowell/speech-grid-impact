@@ -4,9 +4,9 @@
 
 This repository accompanies the paper: 
 
-S. Powell, G. V. Cezar, L. Min, I. Azevedo and R. Rajagopal, "Charging Infrastructure Access and Operation to Reduce the Grid Impacts of Deep Electric Vehicle Adoption", Submitted.
+S. Powell, G. V. Cezar, L. Min, I. Azevedo and R. Rajagopal, "Charging Infrastructure Access and Operation to Reduce the Grid Impacts of Deep Electric Vehicle Adoption".
 
-This code will also be available at: https://github.com/Stanford-Sustainable-Systems-Lab.
+This code is also available at: https://github.com/Stanford-Sustainable-Systems-Lab.
 
 Contact: 
 - siobhan (dot) powell (at) stanford (dot) edu
@@ -28,7 +28,7 @@ Each subfolder has an extended `README.md` describing its contents and use.
 
 We have posted the model objects and charging profiles publicly to accompany the paper. This repository contains instructions and sample code to show how you could use them to run other scenarios. Please contact the authors with any questions.
 
-Data: https://data.mendeley.com/datasets/y872vhtfrc/2. (submitted; accessible pending Mendeley processing)
+Data: https://data.mendeley.com/datasets/y872vhtfrc/2.
 
 Please cite this data set: 
 
